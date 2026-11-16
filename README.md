@@ -159,6 +159,34 @@ The integration tests build a real `StateGraph` with two nodes that each call
 `current_harness()` and assert they see *only their own* document, and a graph
 where a violating node is routed to a repair node by `harness_gate`.
 
+## Real-model demo
+
+`examples/real_llm_demo.py` runs two nodes with conflicting harnesses and
+asserts that each node answers with its own word:
+
+```bash
+python examples/real_llm_demo.py --mock                  # deterministic, no key
+OPENAI_API_KEY=...   python examples/real_llm_demo.py --provider openai
+DEEPSEEK_API_KEY=... python examples/real_llm_demo.py --provider deepseek
+GEMINI_API_KEY=...   python examples/real_llm_demo.py --provider gemini
+python examples/real_llm_demo.py --provider ollama       # local Ollama
+```
+
+## Publishing
+
+* `.github/workflows/ci.yml` runs the test suite on Python 3.10–3.13.
+* `.github/workflows/publish.yml` builds the sdist/wheel, runs `twine check`,
+  and uploads to PyPI on a GitHub release. It works with a `PYPI_API_TOKEN`
+  repository secret or with PyPI trusted publishing (no secret).
+
+Locally:
+
+```bash
+python -m build
+twine check dist/*
+TWINE_USERNAME=__token__ TWINE_PASSWORD=pypi-... twine upload dist/*
+```
+
 ## Limitations
 
 * Regex checks are shallow: they prove a string contains (or avoids) a pattern,
