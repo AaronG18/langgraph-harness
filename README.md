@@ -1,0 +1,175 @@
+# langgraph-harness
+
+**Per-node HARNESS parsing, injection and enforcement for LangGraph nodes.**
+
+A [LangGraph](https://github.com/langchain-ai/langgraph) graph is a set of plain
+callables. `StateGraph.add_node` accepts metadata, retry/cache policies, an input
+schema, error handlers and timeouts — but it has **no notion of a per-node
+instruction document**. `create_react_agent` has a single **graph-level** `prompt`
+(plus `pre_model_hook` / `post_model_hook` for global interception). So today the
+answer to *"can each node's agent parse its own HARNESS?"* is: **not natively.**
+
+`langgraph-harness` adds that missing layer:
+
+```python
+from langgraph_harness import Harness, harnessed, current_harness, harness_messages
+
+PLANNER = Harness.from_text("""
+- MUST: return a JSON object [require="steps"]
+- MUST NOT: mention internal tool names [forbid=tool_]
+- SHOULD: keep the plan under 200 words
+""", name="planner")
+
+@harnessed(PLANNER, validate=True)
+def planner(state, config=None):
+    messages = [*harness_messages(), *state["messages"]]
+    response = llm.invoke(messages)
+    return {"messages": [response]}
+```
+
+`current_harness()` inside the node returns *that node's* harness — not a global
+prompt, and not another node's document.
+
+## Why a node decorator (and not only an edge or a state field)?
+
+| Form | What it can do | Why it is not enough alone |
+| --- | --- | --- |
+| **Node decorator** | Binds the document to one node, exposes it inside the node, validates the output | — (this is the primary form) |
+| **State field** | Carries the node→harness registry and violations across steps | Every node still has to read it manually |
+| **Edge** | Routes to a repair/fallback node when rules fail | An edge runs *after* the node; it cannot inject instructions into the node's LLM call |
+
+The package therefore ships all three, with the decorator as the entry point:
+`@harnessed(...)` binds and injects, `HarnessState` records, and
+`harness_gate(...)` routes.
+
+## Install
+
+```bash
+pip install langgraph-harness
+```
+
+Requires Python 3.10+ and `langgraph>=1.0`.
+
+## The HARNESS format
+
+A harness is a small Markdown document. Only bullet lines that start with `MUST`,
+`MUST NOT` or `SHOULD` are parsed as rules:
+
+```markdown
+# Planner harness
+
+- MUST: return a JSON object [require="steps"]
+- MUST NOT: mention internal tool names [forbid=tool_]
+- SHOULD: keep the plan short
+```
+
+* `MUST` / `MUST NOT` are **enforced**; `SHOULD` failures are **warnings**.
+* `[require=REGEX]` — the output must match the regex.
+* `[forbid=REGEX]` — the output must not match the regex.
+* Rules without an annotation are still injected into the prompt; they simply
+  cannot be verified automatically.
+
+## Three forms
+
+### 1. Node decorator (primary)
+
+```python
+from langgraph_harness import harnessed, current_harness
+
+@harnessed("harnesses/planner.md", validate=True)
+def planner(state):
+    harness = current_harness()          # this node's document
+    ...
+```
+
+Options:
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `validate` | `False` | Check the node's returned text against `require` / `forbid` |
+| `on_violation` | `"raise"` | `"raise"` → `HarnessViolation`; `"record"` → append to `harness_violations` |
+| `inject_messages` | `False` | Prepend a `SystemMessage` with the harness to a copy of `state["messages"]` |
+| `name` | function name | Node name used in errors |
+
+### 2. State
+
+```python
+from typing import Annotated
+from langgraph.graph.message import add_messages
+from langgraph_harness import HarnessState
+
+class State(HarnessState):
+    messages: Annotated[list, add_messages]
+```
+
+`HarnessState` adds two optional channels: `harness` (node → raw text) and
+`harness_violations` (recorded failures). Helpers: `harness_of`, `violations_of`,
+`with_harness`.
+
+### 3. Edge gate
+
+```python
+from langgraph.graph import END, START, StateGraph
+from langgraph_harness import harness_gate
+
+builder.add_conditional_edges(
+    "planner",
+    harness_gate(on_violation="repair", otherwise=END),
+)
+```
+
+When `state["harness_violations"]` is non-empty the router returns `"repair"`.
+
+## API at a glance
+
+```python
+Harness.from_text(text, name=...)      # parse Markdown
+Harness.from_file(path, name=...)      # parse a file
+parse_harness(text, name=...)          # same, functional form
+load_harness(str | Path | Harness)     # resolve any of the three
+
+harnessed(harness, *, validate, on_violation, inject_messages, name)
+current_harness()                      # inside a harnessed node
+harness_messages() / harness_prompt()  # render to a SystemMessage / str
+
+HarnessState                           # TypedDict mix-in
+violations_of(state) / harness_of(state, node) / with_harness(state, node, text)
+
+harness_gate(on_violation="repair", otherwise=END)
+
+validate_output(text, harness) -> Report(violations, warnings)
+```
+
+## How it works
+
+`@harnessed` binds the parsed harness to a `contextvars.ContextVar` for the
+duration of the call and resets it in a `finally` block. Context variables are
+task-local, so concurrent nodes (sync or async) do not see each other's harness.
+The decorated wrapper also exposes `__harness__`, `__harness_name__` and
+`__harness_node__` for introspection.
+
+## Verification
+
+```bash
+pytest -q
+# 26 passed
+```
+
+The integration tests build a real `StateGraph` with two nodes that each call
+`current_harness()` and assert they see *only their own* document, and a graph
+where a violating node is routed to a repair node by `harness_gate`.
+
+## Limitations
+
+* Regex checks are shallow: they prove a string contains (or avoids) a pattern,
+  not that the model *semantically* followed the rule. Use the harness as a
+  guardrail, not as a proof.
+* `inject_messages=True` prepends a `SystemMessage` to the node's copy of
+  `state["messages"]`; the node owns the LLM call and should not echo that
+  message back into state.
+* The package does not call an LLM. It parses, injects, validates and routes;
+  the model invocation stays in your node.
+
+## License
+
+MIT
