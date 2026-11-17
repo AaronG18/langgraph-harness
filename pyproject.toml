@@ -26,6 +26,9 @@ dependencies = ["langgraph>=1.0"]
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-asyncio>=0.24"]
 
+[project.scripts]
+langgraph-harness = "langgraph_harness.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/AaronG18/langgraph-harness"
 Repository = "https://github.com/AaronG18/langgraph-harness"

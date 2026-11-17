@@ -162,6 +162,25 @@ harness_gate(on_violation="repair", otherwise=END,
 validate_output(text, harness) -> Report(violations, warnings)
 ```
 
+## Command line
+
+The same checks are available without writing Python, which is what a CI job
+needs when it has a fixture and the harness that produced it:
+
+```bash
+# exit 0 pass, 1 violation, 2 usage/parse error
+langgraph-harness check guard.md output.txt
+langgraph-harness check guard.md --text "SAFE answer"
+cat output.txt | langgraph-harness check guard.md
+
+langgraph-harness check guard.md output.txt --json     # machine-readable
+langgraph-harness check guard.md output.txt --strict   # SHOULD warns fail too
+langgraph-harness prompt guard.md                      # what the node receives
+```
+
+`python -m langgraph_harness ...` is equivalent when the console script is not on
+`PATH`. The JSON form is stable: `{harness, ok, violations[], warnings[]}`.
+
 ## How it works
 
 `@harnessed` binds the parsed harness to a `contextvars.ContextVar` for the
@@ -174,7 +193,7 @@ The decorated wrapper also exposes `__harness__`, `__harness_name__` and
 
 ```bash
 pytest -q
-# 37 passed
+# 47 passed
 ```
 
 The integration tests build a real `StateGraph` with two nodes that each call
