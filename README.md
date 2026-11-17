@@ -48,6 +48,8 @@ The package therefore ships all three, with the decorator as the entry point:
 pip install langgraph-harness
 ```
 
+On PyPI: <https://pypi.org/project/langgraph-harness/>.
+
 Requires Python 3.10+ and `langgraph>=1.0`.
 
 ## The HARNESS format
@@ -169,7 +171,7 @@ python examples/real_llm_demo.py --mock                  # deterministic, no key
 OPENAI_API_KEY=...   python examples/real_llm_demo.py --provider openai
 DEEPSEEK_API_KEY=... python examples/real_llm_demo.py --provider deepseek
 GEMINI_API_KEY=...   python examples/real_llm_demo.py --provider gemini
-python examples/real_llm_demo.py --provider ollama       # local Ollama
+OLLAMA_MODEL=qwen2.5:1.5b python examples/real_llm_demo.py --provider ollama
 ```
 
 ## Publishing
