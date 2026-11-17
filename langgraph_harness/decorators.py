@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import functools
 import inspect
+from dataclasses import replace
 from typing import Any, Callable, TypeVar
+
+from langgraph.types import Command
 
 from .context import reset_current_harness, set_current_harness
 from .errors import HarnessViolation
@@ -49,6 +52,11 @@ def harnessed(
     Returns:
         The decorated node. The original function is available as
         ``wrapper.__wrapped__``.
+
+    The node may return a string, a state dict, or a LangGraph
+    :class:`~langgraph.types.Command`. For a ``Command`` the text inside ``update`` is
+    validated, and recorded violations are merged into that same ``update`` so
+    ``goto`` / ``graph`` / ``resume`` survive untouched.
     """
     parsed = load_harness(harness, name=name)
     if on_violation not in _ON_VIOLATION:
@@ -122,6 +130,9 @@ def _maybe_inject(args: tuple[Any, ...], enabled: bool) -> tuple[Any, ...]:
 def _extract_text(result: Any) -> str | None:
     if isinstance(result, str):
         return result
+    if isinstance(result, Command):
+        # A Command carries its state update; the text to validate lives there.
+        return None if result.update is None else _extract_text(result.update)
     if isinstance(result, dict):
         messages = result.get("messages")
         if messages:
@@ -138,6 +149,22 @@ def _extract_text(result: Any) -> str | None:
     content = getattr(result, "content", None)
     if isinstance(content, str):
         return content
+    return None
+
+
+def _merge_update(result: Any, extra: dict[str, Any]) -> Any | None:
+    """Return ``result`` with ``extra`` merged into the state update it carries.
+
+    Both a plain dict and LangGraph's ``Command`` carry a state update; a ``Command``
+    also carries ``goto``/``graph``, which ``dataclasses.replace`` preserves. Returns
+    ``None`` when the value carries no update at all, so the caller can decide to raise.
+    """
+    if isinstance(result, dict):
+        return {**result, **extra}
+    if isinstance(result, Command):
+        update = dict(result.update or {})
+        update.update(extra)
+        return replace(result, update=update)
     return None
 
 
@@ -164,23 +191,23 @@ def _maybe_validate(
         # The node now complies. Clear the violations that a previous attempt left
         # in state; otherwise harness_gate() would keep seeing them and route back
         # to the repair node forever.
-        if isinstance(result, dict) and isinstance(state, dict) and state.get("harness_violations"):
-            output = dict(result)
-            output["harness_violations"] = []
-            return output
+        if isinstance(state, dict) and state.get("harness_violations"):
+            patched = _merge_update(result, {"harness_violations": []})
+            if patched is not None:
+                return patched
         return result
 
     if on_violation == "raise":
         raise HarnessViolation(parsed.name, report)
 
-    if isinstance(result, dict):
-        output = dict(result)
-        # "record" means "these are the violations of THIS attempt": overwrite rather
-        # than append, so a later compliant attempt can clear them.
-        output["harness_violations"] = report.as_dicts()
-        if count_repairs:
-            history = state if isinstance(state, dict) else output
-            output["harness_repair_count"] = repair_count_of(history) + 1
-        return output
+    # "record" means "these are the violations of THIS attempt": overwrite rather
+    # than append, so a later compliant attempt can clear them.
+    extra: dict[str, Any] = {"harness_violations": report.as_dicts()}
+    if count_repairs:
+        history = state if isinstance(state, dict) else {}
+        extra["harness_repair_count"] = repair_count_of(history) + 1
 
-    raise HarnessViolation(parsed.name, report)
+    patched = _merge_update(result, extra)
+    if patched is None:
+        raise HarnessViolation(parsed.name, report)
+    return patched
