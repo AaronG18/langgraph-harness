@@ -148,6 +148,21 @@ builder.add_conditional_edges(
 ```
 
 When `state["harness_violations"]` is non-empty the router returns `"repair"`.
+Only `MUST` / `MUST NOT` failures are recorded, so a `SHOULD` warning never sends the
+graph down the repair branch.
+
+A gate can also listen to one section only, which is what you want when a repair node
+can fix formatting but not tone:
+
+```python
+builder.add_conditional_edges(
+    "planner",
+    harness_gate(on_violation="repair", sections=["Output format"]),
+)
+```
+
+A violation recorded under `Tone` is then ignored by this edge, and a violation
+recorded before the first `##` heading belongs to the empty section name `""`.
 
 Without a bound, a repair node that keeps failing sends the graph back forever and
 ends in `GraphRecursionError`. Set `max_retries` to cap it:
@@ -179,11 +194,11 @@ current_harness()                      # inside a harnessed node
 harness_messages() / harness_prompt()  # render to a SystemMessage / str
 
 HarnessState                           # TypedDict mix-in
-violations_of(state) / harness_of(state, node) / with_harness(state, node, text)
+violations_of(state, sections=None) / harness_of(state, node) / with_harness(state, node, text)
 repair_count_of(state) / record_repair_attempt(state)
 
 harness_gate(on_violation="repair", otherwise=END,
-             max_retries=None, on_exhausted=END)
+             max_retries=None, on_exhausted=END, sections=None)
 
 harness.sections() / harness.rules_in(section)
 validate_output(text, harness, sections=None) -> Report(violations, warnings)
@@ -221,7 +236,7 @@ The decorated wrapper also exposes `__harness__`, `__harness_name__` and
 
 ```bash
 pytest -q
-# 56 passed
+# 65 passed
 ```
 
 The integration tests build a real `StateGraph` with two nodes that each call
