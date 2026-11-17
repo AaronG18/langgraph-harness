@@ -40,7 +40,7 @@ from langgraph_harness import (
 PLANNER = Harness.from_text(
     """
 # Planner
-- MUST: answer with the single word PLANNER [require=PLANNER]
+- MUST: reply with exactly the single word PLANNER and nothing else [require=PLANNER]
 """,
     name="planner",
 )
@@ -48,12 +48,12 @@ PLANNER = Harness.from_text(
 WRITER = Harness.from_text(
     """
 # Writer
-- MUST: answer with the single word WRITER [require=WRITER]
+- MUST: reply with exactly the single word WRITER and nothing else [require=WRITER]
 """,
     name="writer",
 )
 
-QUESTION = "Which node are you? Answer in one word."
+QUESTION = "Reply with exactly one word."
 
 
 def _chat_completions(base_url: str, api_key: str, model: str) -> Callable[[str, str], str]:
@@ -203,8 +203,8 @@ def main() -> int:
     print("planner output:", outputs["planner"])
     print("writer output :", outputs["writer"])
 
-    planner_ok = "PLANNER" in outputs["planner"]
-    writer_ok = "WRITER" in outputs["writer"]
+    planner_ok = "PLANNER" in outputs["planner"].upper()
+    writer_ok = "WRITER" in outputs["writer"].upper()
     print("planner followed its own harness:", planner_ok)
     print("writer followed its own harness :", writer_ok)
 
