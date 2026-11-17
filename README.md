@@ -104,9 +104,10 @@ class State(HarnessState):
     messages: Annotated[list, add_messages]
 ```
 
-`HarnessState` adds two optional channels: `harness` (node → raw text) and
-`harness_violations` (recorded failures). Helpers: `harness_of`, `violations_of`,
-`with_harness`.
+`HarnessState` adds three optional channels: `harness` (node → raw text),
+`harness_violations` (violations of the latest attempt, cleared once a node complies)
+and `harness_repair_count` (how many repair attempts have run). Helpers: `harness_of`,
+`violations_of`, `with_harness`, `repair_count_of`, `record_repair_attempt`.
 
 ### 3. Edge gate
 
@@ -122,6 +123,23 @@ builder.add_conditional_edges(
 
 When `state["harness_violations"]` is non-empty the router returns `"repair"`.
 
+Without a bound, a repair node that keeps failing sends the graph back forever and
+ends in `GraphRecursionError`. Set `max_retries` to cap it:
+
+```python
+@harnessed(PLANNER, validate=True, on_violation="record", count_repairs=True)
+def planner(state): ...
+
+builder.add_conditional_edges(
+    "planner",
+    harness_gate(on_violation="repair", max_retries=2, on_exhausted="give_up"),
+)
+```
+
+`count_repairs=True` increments `harness_repair_count` on each violation; after
+`max_retries` attempts the router goes to `on_exhausted` instead of looping. A node
+that finally complies clears `harness_violations`, so the gate returns `otherwise`.
+
 ## API at a glance
 
 ```python
@@ -136,8 +154,10 @@ harness_messages() / harness_prompt()  # render to a SystemMessage / str
 
 HarnessState                           # TypedDict mix-in
 violations_of(state) / harness_of(state, node) / with_harness(state, node, text)
+repair_count_of(state) / record_repair_attempt(state)
 
-harness_gate(on_violation="repair", otherwise=END)
+harness_gate(on_violation="repair", otherwise=END,
+             max_retries=None, on_exhausted=END)
 
 validate_output(text, harness) -> Report(violations, warnings)
 ```

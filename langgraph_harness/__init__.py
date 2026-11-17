@@ -30,10 +30,17 @@ from .edges import harness_gate
 from .errors import HarnessError, HarnessNotBound, HarnessParseError, HarnessViolation
 from .harness import Harness, Rule, load_harness, parse_harness
 from .prompts import harness_messages, harness_prompt
-from .state import HarnessState, harness_of, violations_of, with_harness
+from .state import (
+    HarnessState,
+    harness_of,
+    record_repair_attempt,
+    repair_count_of,
+    violations_of,
+    with_harness,
+)
 from .validation import Report, Violation, validate_output
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
 __all__ = [
     # parsing
@@ -53,6 +60,8 @@ __all__ = [
     "harness_of",
     "violations_of",
     "with_harness",
+    "repair_count_of",
+    "record_repair_attempt",
     # edge form
     "harness_gate",
     # validation
