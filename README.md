@@ -174,7 +174,7 @@ The decorated wrapper also exposes `__harness__`, `__harness_name__` and
 
 ```bash
 pytest -q
-# 26 passed
+# 37 passed
 ```
 
 The integration tests build a real `StateGraph` with two nodes that each call
