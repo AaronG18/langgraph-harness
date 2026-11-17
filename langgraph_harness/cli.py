@@ -62,7 +62,8 @@ def _cmd_check(args: argparse.Namespace) -> int:
         text = args.text_option
     else:
         text = _read_text(args.text)
-    return _emit(validate_output(text, harness), as_json=args.json, strict=args.strict, name=harness.name)
+    report = validate_output(text, harness, sections=args.sections)
+    return _emit(report, as_json=args.json, strict=args.strict, name=harness.name)
 
 
 def _cmd_prompt(args: argparse.Namespace) -> int:
@@ -82,6 +83,13 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("harness", help="path to the harness Markdown file")
     check.add_argument("text", nargs="?", help="file holding the output to check; '-' or omitted reads stdin")
     check.add_argument("--text", dest="text_option", help="validate this string instead of a file")
+    check.add_argument(
+        "--section",
+        action="append",
+        dest="sections",
+        metavar="NAME",
+        help="only check rules under this ## section (repeatable)",
+    )
     check.add_argument("--json", action="store_true", help="emit a JSON report")
     check.add_argument("--strict", action="store_true", help="treat SHOULD warnings as failures")
     check.add_argument("--name", help="override the harness name shown in the report")
