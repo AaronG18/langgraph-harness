@@ -33,7 +33,7 @@ from .prompts import harness_messages, harness_prompt
 from .state import HarnessState, harness_of, violations_of, with_harness
 from .validation import Report, Violation, validate_output
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 __all__ = [
     # parsing
