@@ -40,7 +40,7 @@ from .state import (
 )
 from .validation import Report, Violation, validate_output
 
-__version__ = "0.1.4"
+__version__ = "0.2.0"
 
 __all__ = [
     # parsing

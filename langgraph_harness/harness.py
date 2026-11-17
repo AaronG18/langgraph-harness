@@ -24,6 +24,8 @@ from .errors import HarnessParseError
 
 _RULE_RE = re.compile(r"^\s*[-*]\s*(MUST NOT|MUST|SHOULD)\s*[:：]\s*(.+?)\s*$", re.IGNORECASE)
 _ANNOTATION_RE = re.compile(r"\[(require|forbid)\s*=\s*(.+?)\]", re.IGNORECASE | re.DOTALL)
+# `#` is the document title; `##` and deeper group the rules that follow them.
+_HEADING_RE = re.compile(r"^\s{0,3}(#{2,6})\s+(.+?)\s*#*\s*$")
 
 _LEVELS = ("MUST", "MUST NOT", "SHOULD")
 
@@ -37,6 +39,7 @@ class Rule:
     text: str
     require: str | None = None
     forbid: str | None = None
+    section: str = ""
 
     @property
     def is_hard(self) -> bool:
@@ -74,13 +77,43 @@ class Harness:
             raise ValueError(f"unknown rule level {level!r}; expected one of {_LEVELS}")
         return tuple(rule for rule in self.rules if rule.level == level)
 
+    def sections(self) -> dict[str, tuple[Rule, ...]]:
+        """Group the rules by their ``##`` heading, in document order.
+
+        Rules that appear before the first heading are collected under the empty
+        string. A repeated heading name merges into the first occurrence's bucket.
+        """
+        grouped: dict[str, list[Rule]] = {}
+        for rule in self.rules:
+            grouped.setdefault(rule.section, []).append(rule)
+        return {name: tuple(rules) for name, rules in grouped.items()}
+
+    def rules_in(self, section: str) -> tuple[Rule, ...]:
+        """Return the rules of one section; ``""`` means before the first heading."""
+        return tuple(rule for rule in self.rules if rule.section == section)
+
     def prompt(self) -> str:
-        """Render the harness as a compact system-prompt block."""
+        """Render the harness as a compact system-prompt block.
+
+        A document without ``##`` headings renders as a flat list, exactly as
+        before sections existed. A document with headings gains a ``## name``
+        line per section so the model can tell the groups apart.
+        """
         lines = [f"HARNESS: {self.name}", "You must obey these rules for this node:"]
         if not self.rules:
             lines.append("- (no machine-readable rules found)")
-        for rule in self.rules:
-            lines.append(f"- [{rule.level}] {rule.text}")
+            return "\n".join(lines)
+
+        if all(not rule.section for rule in self.rules):
+            for rule in self.rules:
+                lines.append(f"- [{rule.level}] {rule.text}")
+            return "\n".join(lines)
+
+        for name, rules in self.sections().items():
+            if name:
+                lines.append(f"## {name}")
+            for rule in rules:
+                lines.append(f"- [{rule.level}] {rule.text}")
         return "\n".join(lines)
 
     def __len__(self) -> int:
@@ -97,7 +130,13 @@ def parse_harness(text: str, *, name: str = "harness") -> Harness:
         raise HarnessParseError(f"harness source must be str, got {type(text).__name__}")
 
     rules: list[Rule] = []
+    section = ""
     for line in text.splitlines():
+        heading = _HEADING_RE.match(line)
+        if heading is not None:
+            section = heading.group(2).strip()
+            continue
+
         match = _RULE_RE.match(line)
         if match is None:
             continue
@@ -122,6 +161,7 @@ def parse_harness(text: str, *, name: str = "harness") -> Harness:
                 text=_ANNOTATION_RE.sub("", body).strip(),
                 require=require,
                 forbid=forbid,
+                section=section,
             )
         )
 

@@ -9,6 +9,7 @@ failures are warnings.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from .harness import Harness, Rule
@@ -22,6 +23,7 @@ class Violation:
     level: str
     message: str
     rule_text: str
+    section: str = ""
 
     def as_dict(self) -> dict[str, str]:
         return {
@@ -29,6 +31,7 @@ class Violation:
             "level": self.level,
             "message": self.message,
             "rule_text": self.rule_text,
+            "section": self.section,
         }
 
 
@@ -50,21 +53,31 @@ class Report:
 
 def _check_rule(rule: Rule, text: str) -> Violation | None:
     if rule.require is not None and re.search(rule.require, text, re.IGNORECASE | re.DOTALL) is None:
-        return Violation(rule.id, rule.level, f"required pattern not found: {rule.require}", rule.text)
+        return Violation(rule.id, rule.level, f"required pattern not found: {rule.require}", rule.text, rule.section)
     if rule.forbid is not None and re.search(rule.forbid, text, re.IGNORECASE | re.DOTALL) is not None:
-        return Violation(rule.id, rule.level, f"forbidden pattern found: {rule.forbid}", rule.text)
+        return Violation(rule.id, rule.level, f"forbidden pattern found: {rule.forbid}", rule.text, rule.section)
     return None
 
 
-def validate_output(text: str, harness: Harness) -> Report:
-    """Validate ``text`` against ``harness`` and return a :class:`Report`."""
+def validate_output(text: str, harness: Harness, *, sections: Iterable[str] | None = None) -> Report:
+    """Validate ``text`` against ``harness`` and return a :class:`Report`.
+
+    Args:
+        text: The node output to check.
+        harness: The parsed harness.
+        sections: When given, only rules belonging to these ``##`` sections are
+            checked (``""`` selects the rules written before the first heading).
+    """
     if not isinstance(text, str):
         raise TypeError(f"validate_output() expects str, got {type(text).__name__}")
 
+    selected = None if sections is None else set(sections)
     violations: list[Violation] = []
     warnings: list[Violation] = []
 
     for rule in harness.rules:
+        if selected is not None and rule.section not in selected:
+            continue
         failure = _check_rule(rule, text)
         if failure is None:
             continue

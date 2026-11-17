@@ -71,6 +71,32 @@ A harness is a small Markdown document. Only bullet lines that start with `MUST`
 * Rules without an annotation are still injected into the prompt; they simply
   cannot be verified automatically.
 
+### Sections
+
+`#` is the document title; a `##` (or deeper) heading groups the rules below it.
+The prompt then names each group, and validation can be scoped to one of them:
+
+```markdown
+# Planner harness
+
+- MUST: reply in English [require=[A-Za-z]]
+
+## Output format
+- MUST: return JSON [require=\{\s*"steps"]
+
+## Tone
+- MUST NOT: apologise [forbid=^\s*I'm sorry]
+```
+
+```python
+harness.sections()                      # {"": (R1,), "Output format": (R2,), "Tone": (R3,)}
+harness.rules_in("Tone")                # (R3,)
+validate_output(text, harness, sections=["Output format"])   # only R2 is checked
+```
+
+A document without `##` headings keeps the flat prompt it always had, and
+`violations`/`warnings` now carry the `section` they came from.
+
 ## Three forms
 
 ### 1. Node decorator (primary)
@@ -159,7 +185,8 @@ repair_count_of(state) / record_repair_attempt(state)
 harness_gate(on_violation="repair", otherwise=END,
              max_retries=None, on_exhausted=END)
 
-validate_output(text, harness) -> Report(violations, warnings)
+harness.sections() / harness.rules_in(section)
+validate_output(text, harness, sections=None) -> Report(violations, warnings)
 ```
 
 ## Command line
@@ -175,6 +202,7 @@ cat output.txt | langgraph-harness check guard.md
 
 langgraph-harness check guard.md output.txt --json     # machine-readable
 langgraph-harness check guard.md output.txt --strict   # SHOULD warns fail too
+langgraph-harness check guard.md output.txt --section "Output format"
 langgraph-harness prompt guard.md                      # what the node receives
 ```
 
@@ -193,7 +221,7 @@ The decorated wrapper also exposes `__harness__`, `__harness_name__` and
 
 ```bash
 pytest -q
-# 47 passed
+# 56 passed
 ```
 
 The integration tests build a real `StateGraph` with two nodes that each call
