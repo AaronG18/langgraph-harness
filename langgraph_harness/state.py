@@ -13,6 +13,7 @@ state schema::
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
 try:  # Python 3.12+
@@ -59,11 +60,26 @@ def record_repair_attempt(state: Any, *, counter_key: str = "harness_repair_coun
     return {counter_key: repair_count_of(state, counter_key=counter_key) + 1}
 
 
-def violations_of(state: Any) -> list[dict[str, Any]]:
-    """Return the recorded violations from ``state`` (dict or object)."""
+def violations_of(state: Any, *, sections: Iterable[str] | None = None) -> list[dict[str, Any]]:
+    """Return the recorded violations from ``state`` (dict or object).
+
+    Args:
+        state: A state mapping or an object exposing ``harness_violations``.
+        sections: When given, keep only violations that came from one of these
+            ``##`` sections (``""`` selects the rules written before the first
+            heading). Violations recorded before sections existed have no
+            ``section`` key and are treated as ``""``.
+    """
     if isinstance(state, dict):
-        return list(state.get("harness_violations") or [])
-    return list(getattr(state, "harness_violations", None) or [])
+        recorded = list(state.get("harness_violations") or [])
+    else:
+        recorded = list(getattr(state, "harness_violations", None) or [])
+
+    if sections is None:
+        return recorded
+
+    wanted = set(sections)
+    return [v for v in recorded if str(v.get("section", "")) in wanted]
 
 
 def harness_of(state: Any, node: str) -> str | None:

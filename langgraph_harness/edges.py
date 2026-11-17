@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any, Callable
 
 from langgraph.graph import END
@@ -16,12 +17,16 @@ def harness_gate(
     max_retries: int | None = None,
     on_exhausted: Any = END,
     counter_key: str = "harness_repair_count",
+    sections: Iterable[str] | None = None,
 ) -> Callable[[Any], Any]:
     """Build a conditional-edge router.
 
     Use it with ``add_conditional_edges(node, harness_gate(on_violation="repair"))``.
     The router returns ``on_violation`` when ``state["harness_violations"]`` is
     non-empty, else ``otherwise`` (``END`` by default).
+
+    Only ``MUST`` / ``MUST NOT`` failures are recorded, so a ``SHOULD`` warning never
+    sends the graph down the repair branch.
 
     Without ``max_retries`` the router keeps sending the graph to the repair node
     for as long as violations exist, which can loop until LangGraph raises
@@ -30,19 +35,24 @@ def harness_gate(
 
     Args:
         on_violation: Name of the repair / fallback node to route to.
-        otherwise: Destination when there are no violations (default: ``END``).
+        otherwise: Destination when there are no relevant violations (default: ``END``).
         max_retries: Maximum number of repair attempts before giving up. ``None``
             (default) keeps the previous unbounded behaviour.
         on_exhausted: Destination once ``max_retries`` is reached (default: ``END``).
         counter_key: State key that counts repair attempts. The counter is
             incremented by ``@harnessed(..., count_repairs=True)`` or by
             :func:`langgraph_harness.record_repair_attempt`.
+        sections: When given, only violations from these ``##`` sections route to
+            the repair node; a violation in any other section is ignored by this
+            gate (``""`` selects the rules written before the first heading).
     """
     if max_retries is not None and max_retries < 0:
         raise ValueError(f"max_retries must be >= 0 or None, got {max_retries!r}")
 
+    selected = None if sections is None else tuple(sections)
+
     def route(state: Any) -> Any:
-        if not violations_of(state):
+        if not violations_of(state, sections=selected):
             return otherwise
         if max_retries is None:
             return on_violation
