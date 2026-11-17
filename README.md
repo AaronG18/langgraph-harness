@@ -118,6 +118,17 @@ Options:
 | `on_violation` | `"raise"` | `"raise"` → `HarnessViolation`; `"record"` → append to `harness_violations` |
 | `inject_messages` | `False` | Prepend a `SystemMessage` with the harness to a copy of `state["messages"]` |
 | `name` | function name | Node name used in errors |
+| `count_repairs` | `False` | On `"record"`, also increment `harness_repair_count` |
+
+The node may return a string, a state dict, **or a `Command`**. For a `Command` the
+text inside `update` is validated, and the recorded violations are merged into that
+same `update`, so `goto` / `graph` / `resume` come through untouched:
+
+```python
+@harnessed(PLANNER, validate=True, on_violation="record", count_repairs=True)
+def planner(state):
+    return Command(update={"messages": [answer]}, goto="tools")
+```
 
 ### 2. State
 
@@ -236,7 +247,7 @@ The decorated wrapper also exposes `__harness__`, `__harness_name__` and
 
 ```bash
 pytest -q
-# 65 passed
+# 72 passed
 ```
 
 The integration tests build a real `StateGraph` with two nodes that each call
