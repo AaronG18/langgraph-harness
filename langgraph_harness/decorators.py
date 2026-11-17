@@ -10,6 +10,7 @@ from .context import reset_current_harness, set_current_harness
 from .errors import HarnessViolation
 from .harness import HarnessLike, load_harness
 from .prompts import harness_messages
+from .state import repair_count_of
 from .validation import validate_output
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -23,6 +24,7 @@ def harnessed(
     validate: bool = False,
     on_violation: str = "raise",
     inject_messages: bool = False,
+    count_repairs: bool = False,
     name: str | None = None,
 ) -> Callable[[F], F]:
     """Bind a HARNESS to a LangGraph node.
@@ -38,6 +40,10 @@ def harnessed(
         inject_messages: When ``True`` and the node's first argument is a state
             dict containing ``messages``, a ``SystemMessage`` with the rendered
             harness is prepended to a copy of those messages.
+        count_repairs: When ``True`` and ``on_violation="record"``, also increment
+            ``harness_repair_count`` in the returned state. Combine it with
+            ``harness_gate(max_retries=...)`` so a repair loop stops with a
+            destination of your choice instead of hitting ``recursion_limit``.
         name: Node name used in error messages (defaults to the function name).
 
     Returns:
@@ -61,7 +67,15 @@ def harnessed(
                     result = await fn(*call_args, **kwargs)
                 finally:
                     reset_current_harness(token)
-                return _maybe_validate(result, parsed, node_name, validate, on_violation)
+                return _maybe_validate(
+                    result,
+                    parsed,
+                    node_name,
+                    validate,
+                    on_violation,
+                    state=args[0] if args else None,
+                    count_repairs=count_repairs,
+                )
 
             wrapper: Any = async_wrapper
         else:
@@ -74,7 +88,15 @@ def harnessed(
                     result = fn(*call_args, **kwargs)
                 finally:
                     reset_current_harness(token)
-                return _maybe_validate(result, parsed, node_name, validate, on_violation)
+                return _maybe_validate(
+                    result,
+                    parsed,
+                    node_name,
+                    validate,
+                    on_violation,
+                    state=args[0] if args else None,
+                    count_repairs=count_repairs,
+                )
 
             wrapper = sync_wrapper
 
@@ -125,6 +147,9 @@ def _maybe_validate(
     node_name: str,
     validate: bool,
     on_violation: str,
+    *,
+    state: Any = None,
+    count_repairs: bool = False,
 ) -> Any:
     del node_name  # kept for a clearer signature / future messages
     if not validate:
@@ -136,6 +161,13 @@ def _maybe_validate(
 
     report = validate_output(text, parsed)
     if report.ok:
+        # The node now complies. Clear the violations that a previous attempt left
+        # in state; otherwise harness_gate() would keep seeing them and route back
+        # to the repair node forever.
+        if isinstance(result, dict) and isinstance(state, dict) and state.get("harness_violations"):
+            output = dict(result)
+            output["harness_violations"] = []
+            return output
         return result
 
     if on_violation == "raise":
@@ -143,8 +175,12 @@ def _maybe_validate(
 
     if isinstance(result, dict):
         output = dict(result)
-        existing = list(output.get("harness_violations") or [])
-        output["harness_violations"] = [*existing, *report.as_dicts()]
+        # "record" means "these are the violations of THIS attempt": overwrite rather
+        # than append, so a later compliant attempt can clear them.
+        output["harness_violations"] = report.as_dicts()
+        if count_repairs:
+            history = state if isinstance(state, dict) else output
+            output["harness_repair_count"] = repair_count_of(history) + 1
         return output
 
     raise HarnessViolation(parsed.name, report)

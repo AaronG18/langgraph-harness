@@ -28,10 +28,35 @@ class HarnessState(TypedDict, total=False):
         harness: Mapping of node name to the raw harness text that was bound.
         harness_violations: Violations recorded by nodes decorated with
             ``@harnessed(..., validate=True, on_violation="record")``.
+        harness_repair_count: How many repair attempts have been made. Incremented
+            automatically when ``@harnessed(..., count_repairs=True)`` records a
+            violation, and read by ``harness_gate(max_retries=...)`` to stop a
+            repair loop instead of letting it hit ``recursion_limit``.
     """
 
     harness: dict[str, str]
     harness_violations: list[dict[str, Any]]
+    harness_repair_count: int
+
+
+def repair_count_of(state: Any, *, counter_key: str = "harness_repair_count") -> int:
+    """Return how many repair attempts ``state`` has recorded (0 when absent)."""
+    value = state.get(counter_key) if isinstance(state, dict) else getattr(state, counter_key, None)
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def record_repair_attempt(state: Any, *, counter_key: str = "harness_repair_count") -> dict[str, int]:
+    """Return a state update that increments the repair counter by one.
+
+    Use it inside a repair node when the node is not a ``@harnessed`` node::
+
+        def repair(state):
+            return {**record_repair_attempt(state), "messages": [...]}
+    """
+    return {counter_key: repair_count_of(state, counter_key=counter_key) + 1}
 
 
 def violations_of(state: Any) -> list[dict[str, Any]]:
