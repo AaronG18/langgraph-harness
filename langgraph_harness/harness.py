@@ -76,7 +76,7 @@ class Harness:
 
     def prompt(self) -> str:
         """Render the harness as a compact system-prompt block."""
-        lines = [f"HARNESS: {self.name}", "Follow these rules for this node:"]
+        lines = [f"HARNESS: {self.name}", "You must obey these rules for this node:"]
         if not self.rules:
             lines.append("- (no machine-readable rules found)")
         for rule in self.rules:
