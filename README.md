@@ -199,6 +199,7 @@ Harness.from_text(text, name=...)      # parse Markdown
 Harness.from_file(path, name=...)      # parse a file
 parse_harness(text, name=...)          # same, functional form
 load_harness(str | Path | Harness)     # resolve any of the three
+load_harnesses(dir) -> {key: Harness}  # every .md below dir, keyed by relative path
 
 harnessed(harness, *, validate, on_violation, inject_messages, name)
 current_harness()                      # inside a harnessed node
@@ -251,7 +252,7 @@ The decorated wrapper also exposes `__harness__`, `__harness_name__` and
 
 ```bash
 pytest -q
-# 88 passed
+# 97 passed
 ```
 
 The integration tests build a real `StateGraph` with two nodes that each call
