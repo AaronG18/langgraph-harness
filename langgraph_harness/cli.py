@@ -87,6 +87,20 @@ def _cmd_prompt(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _cmd_diff(args: argparse.Namespace) -> int:
+    old = Harness.from_file(args.old)
+    new = Harness.from_file(args.new)
+    result = old.diff(new)
+
+    if args.json:
+        payload = {"different": not result.is_empty, "count": len(result), **result.as_dict()}
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        print(result.format())
+
+    return EXIT_OK if result.is_empty else EXIT_VIOLATION
+
+
 def _cmd_init(args: argparse.Namespace) -> int:
     target = args.path
     fallback = Path(target).stem if target not in ("", "-") else "plan"
@@ -135,6 +149,12 @@ def build_parser() -> argparse.ArgumentParser:
     prompt.add_argument("harness", help="path to the harness Markdown file")
     prompt.add_argument("--name", help="override the harness name")
     prompt.set_defaults(func=_cmd_prompt)
+
+    diff = sub.add_parser("diff", help="compare two harness files (exit 1 when they differ)")
+    diff.add_argument("old", help="the previous harness")
+    diff.add_argument("new", help="the current harness")
+    diff.add_argument("--json", action="store_true", help="emit a JSON report")
+    diff.set_defaults(func=_cmd_diff)
 
     init = sub.add_parser("init", help="write a starter harness document with sections")
     init.add_argument("path", nargs="?", default="harness.md", help="where to write it; '-' prints to stdout")

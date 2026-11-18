@@ -47,6 +47,66 @@ class Rule:
         return self.level in ("MUST", "MUST NOT")
 
 
+def _label(rule: Rule) -> str:
+    return f"({rule.section}) " if rule.section else ""
+
+
+def _change_note(old: Rule, new: Rule) -> str:
+    notes: list[str] = []
+    if old.level != new.level:
+        notes.append(f"{old.level} -> {new.level}")
+    if old.require != new.require:
+        notes.append("require changed")
+    if old.forbid != new.forbid:
+        notes.append("forbid changed")
+    return ", ".join(notes) or "changed"
+
+
+@dataclass(frozen=True, slots=True)
+class HarnessDiff:
+    """What changed between two harnesses, from the older one to the newer one."""
+
+    added: tuple[Rule, ...] = ()
+    removed: tuple[Rule, ...] = ()
+    changed: tuple[tuple[Rule, Rule], ...] = ()
+
+    @property
+    def is_empty(self) -> bool:
+        """``True`` when the two documents carry the same rules."""
+        return not (self.added or self.removed or self.changed)
+
+    def __len__(self) -> int:
+        return len(self.added) + len(self.removed) + len(self.changed)
+
+    def format(self) -> str:
+        """Render the diff as one line per change, or ``no changes``."""
+        if self.is_empty:
+            return "no changes"
+        lines: list[str] = []
+        for rule in self.added:
+            lines.append(f"+ [{rule.level}] {_label(rule)}{rule.text}")
+        for rule in self.removed:
+            lines.append(f"- [{rule.level}] {_label(rule)}{rule.text}")
+        for old, new in self.changed:
+            lines.append(f"~ [{_change_note(old, new)}] {_label(new)}{new.text}")
+        return "\n".join(lines)
+
+    def as_dict(self) -> dict[str, list[dict[str, object]]]:
+        return {
+            "added": [{"section": r.section, "level": r.level, "text": r.text} for r in self.added],
+            "removed": [{"section": r.section, "level": r.level, "text": r.text} for r in self.removed],
+            "changed": [
+                {
+                    "section": new.section,
+                    "text": new.text,
+                    "old_level": old.level,
+                    "new_level": new.level,
+                }
+                for old, new in self.changed
+            ],
+        }
+
+
 @dataclass(frozen=True, slots=True)
 class Harness:
     """A parsed harness document."""
@@ -91,6 +151,34 @@ class Harness:
     def rules_in(self, section: str) -> tuple[Rule, ...]:
         """Return the rules of one section; ``""`` means before the first heading."""
         return tuple(rule for rule in self.rules if rule.section == section)
+
+    def diff(self, other: "Harness") -> HarnessDiff:
+        """Return the changes needed to turn this harness into ``other``.
+
+        Rules are matched on ``(section, text)``, case-insensitively; repeated copies of
+        the same text are paired in order. Consequences worth knowing: a rule that only
+        moved to another section appears as one removal plus one addition, and editing the
+        text of a rule also shows up as remove + add rather than as a change.
+        """
+        remaining: dict[tuple[str, str], list[Rule]] = {}
+        for rule in self.rules:
+            key = (rule.section.strip().lower(), rule.text.strip().lower())
+            remaining.setdefault(key, []).append(rule)
+
+        added: list[Rule] = []
+        changed: list[tuple[Rule, Rule]] = []
+        for rule in other.rules:
+            key = (rule.section.strip().lower(), rule.text.strip().lower())
+            bucket = remaining.get(key)
+            if bucket:
+                old = bucket.pop(0)
+                if (old.level, old.require, old.forbid) != (rule.level, rule.require, rule.forbid):
+                    changed.append((old, rule))
+            else:
+                added.append(rule)
+
+        removed = [rule for bucket in remaining.values() for rule in bucket]
+        return HarnessDiff(tuple(added), tuple(removed), tuple(changed))
 
     def prompt(self) -> str:
         """Render the harness as a compact system-prompt block.
