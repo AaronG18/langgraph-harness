@@ -259,6 +259,43 @@ def parse_harness(text: str, *, name: str = "harness") -> Harness:
 HarnessLike = "str | Path | Harness"
 
 
+def load_harnesses(
+    source: str | Path,
+    *,
+    pattern: str = "*.md",
+    recursive: bool = True,
+) -> dict[str, Harness]:
+    """Load every harness under ``source`` into ``{key: Harness}``.
+
+    Keys are the file paths relative to ``source`` without the suffix, so a flat
+    directory yields ``planner`` while ``agents/planner.md`` yields ``agents/planner``.
+    That keeps nested directories unambiguous instead of silently overwriting a stem.
+
+    Args:
+        source: A directory (or a single file, which yields a one-entry mapping).
+        pattern: Glob applied to each candidate file.
+        recursive: Search subdirectories too (default) or only the top level.
+
+    Raises:
+        HarnessParseError: if ``source`` is neither an existing file nor a directory.
+    """
+    path = Path(source)
+    if path.is_file():
+        return {path.stem: Harness.from_file(path)}
+
+    if not path.is_dir():
+        raise HarnessParseError(f"not a directory: {path!s}")
+
+    found = path.rglob(pattern) if recursive else path.glob(pattern)
+    loaded: dict[str, Harness] = {}
+    for candidate in sorted(found):
+        if not candidate.is_file():
+            continue
+        key = candidate.relative_to(path).with_suffix("").as_posix()
+        loaded[key] = Harness.from_file(candidate, name=key)
+    return loaded
+
+
 def load_harness(source: str | Path | Harness, *, name: str | None = None) -> Harness:
     """Resolve ``source`` (a path, a raw document or a :class:`Harness`)."""
     if isinstance(source, Harness):

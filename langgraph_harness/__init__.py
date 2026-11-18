@@ -28,7 +28,7 @@ from .context import current_harness, reset_current_harness, set_current_harness
 from .decorators import harnessed
 from .edges import harness_gate
 from .errors import HarnessError, HarnessNotBound, HarnessParseError, HarnessViolation
-from .harness import Harness, HarnessDiff, Rule, load_harness, parse_harness
+from .harness import Harness, HarnessDiff, Rule, load_harness, load_harnesses, parse_harness
 from .prompts import harness_messages, harness_prompt
 from .state import (
     HarnessState,
@@ -40,7 +40,7 @@ from .state import (
 )
 from .validation import Report, Violation, validate_output
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 __all__ = [
     # parsing
@@ -48,6 +48,7 @@ __all__ = [
     "HarnessDiff",
     "Rule",
     "load_harness",
+    "load_harnesses",
     "parse_harness",
     # node decorator (primary form)
     "harnessed",
