@@ -212,6 +212,8 @@ harness_gate(on_violation="repair", otherwise=END,
              max_retries=None, on_exhausted=END, sections=None)
 
 harness.sections() / harness.rules_in(section)
+harness.diff(other) -> HarnessDiff(added, removed, changed)   # .format() / .as_dict()
+
 validate_output(text, harness, sections=None) -> Report(violations, warnings)
 ```
 
@@ -231,6 +233,7 @@ langgraph-harness check guard.md output.txt --strict   # SHOULD warns fail too
 langgraph-harness check guard.md output.txt --section "Output format"
 langgraph-harness prompt guard.md                      # what the node receives
 langgraph-harness init harnesses/planner.md            # starter document with sections
+langgraph-harness diff old.md new.md                   # 0 identical / 1 different / 2 error
 ```
 
 `python -m langgraph_harness ...` is equivalent when the console script is not on
@@ -248,7 +251,7 @@ The decorated wrapper also exposes `__harness__`, `__harness_name__` and
 
 ```bash
 pytest -q
-# 79 passed
+# 88 passed
 ```
 
 The integration tests build a real `StateGraph` with two nodes that each call
