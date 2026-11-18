@@ -24,6 +24,21 @@ EXIT_OK = 0
 EXIT_VIOLATION = 1
 EXIT_ERROR = 2
 
+# A starter document that already uses sections, so `init` -> `check` works in one step.
+STARTER_TEMPLATE = """# {name} harness
+
+Replace these examples with your own rules. `MUST` / `MUST NOT` are enforced,
+`SHOULD` is reported as a warning, and each `##` heading groups the rules below it
+so a gate can act on one group.
+
+## Output format
+- MUST: return a JSON object with a "steps" key [require=\\{{\\s*"steps"]
+
+## Tone
+- MUST NOT: mention internal tool names [forbid=tool_]
+- SHOULD: keep the answer under 200 words
+"""
+
 
 def _read_text(source: str | None) -> str:
     """Read the candidate output from a file, ``-``/nothing meaning stdin."""
@@ -72,6 +87,27 @@ def _cmd_prompt(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _cmd_init(args: argparse.Namespace) -> int:
+    target = args.path
+    fallback = Path(target).stem if target not in ("", "-") else "plan"
+    text = STARTER_TEMPLATE.format(name=args.name or fallback)
+
+    if target == "-":
+        print(text, end="")
+        return EXIT_OK
+
+    path = Path(target)
+    if path.exists() and not args.force:
+        print(f"error: {path} already exists (use --force to overwrite)", file=sys.stderr)
+        return EXIT_ERROR
+
+    if str(path.parent) not in ("", "."):
+        path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    print(f"wrote {path}")
+    return EXIT_OK
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="langgraph-harness",
@@ -99,6 +135,12 @@ def build_parser() -> argparse.ArgumentParser:
     prompt.add_argument("harness", help="path to the harness Markdown file")
     prompt.add_argument("--name", help="override the harness name")
     prompt.set_defaults(func=_cmd_prompt)
+
+    init = sub.add_parser("init", help="write a starter harness document with sections")
+    init.add_argument("path", nargs="?", default="harness.md", help="where to write it; '-' prints to stdout")
+    init.add_argument("--name", help="harness name used in the title (default: file stem)")
+    init.add_argument("--force", action="store_true", help="overwrite an existing file")
+    init.set_defaults(func=_cmd_init)
 
     return parser
 
